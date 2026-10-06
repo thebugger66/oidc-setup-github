@@ -1,0 +1,134 @@
+name: Deploy Frontend to ECS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: student-frontend
+  ECS_CLUSTER: fluffy-bat-3tibzr
+  ECS_SERVICE: student-frontend-task-oid
+  ECS_TASK_DEFINITION: student-frontend-task
+  CONTAINER_NAME: student-frontend
+  CONTAINER_PORT: 5173
+
+jobs:
+  deploy:
+    name: Build and Deploy Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # 1. Get source code from the "that" branch
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: that
+
+      # 2. Authenticate to AWS using GitHub OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      # 3. Verify AWS identity
+      - name: Check AWS identity
+        run: |
+          aws sts get-caller-identity
+
+      # 4. Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 5. Create Docker image name
+      - name: Set image
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      # 6. Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ steps.image.outputs.image }} \
+            .
+
+      # 7. Push Docker image to ECR
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.image.outputs.image }}
+
+      # 8. Download current ECS task definition
+      - name: Download ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$ECS_TASK_DEFINITION" \
+            --query taskDefinition \
+            --output json > task-definition.json
+
+      # 9. Clean task definition
+      - name: Clean task definition
+        run: |
+          python - <<'PY'
+          import json
+
+          with open("task-definition.json") as f:
+              data = json.load(f)
+
+          for key in [
+              "taskDefinitionArn",
+              "revision",
+              "status",
+              "requiresAttributes",
+              "compatibilities",
+              "registeredAt",
+              "registeredBy"
+          ]:
+              data.pop(key, None)
+
+          with open("task-definition.json", "w") as f:
+              json.dump(data, f)
+          PY
+
+      # 10. Replace the container image
+      - name: Update container image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: student-frontend
+          image: ${{ steps.image.outputs.image }}
+
+      # 11. Deploy updated task definition to ECS
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: student-frontend-task-oid
+          cluster: fluffy-bat-3tibzr
+          wait-for-service-stability: true
+
+      # 12. Deployment successful
+      - name: Deployment successful
+        run: |
+          echo "======================================"
+          echo "Frontend deployed successfully!"
+          echo "======================================"
+          echo "AWS Region:       ap-south-1"
+          echo "ECR Repository:   student-frontend"
+          echo "ECS Cluster:      fluffy-bat-3tibzr"
+          echo "ECS Service:      student-frontend-task-oid"
+          echo "Container:        student-frontend"
+          echo "Container Port:   5173"
+          echo "Branch:           that"
+          echo "Image:            ${{ steps.image.outputs.image }}"
+          echo "======================================"
