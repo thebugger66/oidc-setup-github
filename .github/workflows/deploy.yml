@@ -12,7 +12,7 @@ env:
   ECR_REPOSITORY: student-frontend
   ECS_CLUSTER: fluffy-bat-3tibzr
   ECS_SERVICE: student-frontend-task-oidc-service-8l6oa06u
-  ECS_TASK_DEFINITION: student-frontend-task
+  ECS_TASK_DEFINITION: student-frontend-task-oidc
   CONTAINER_NAME: student-frontend
   CONTAINER_PORT: 5173
 
