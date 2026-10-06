@@ -113,7 +113,7 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: student-frontend-task-oid
+          service: student-frontend-task-service-3wkmar44
           cluster: fluffy-bat-3tibzr
           wait-for-service-stability: true
 
